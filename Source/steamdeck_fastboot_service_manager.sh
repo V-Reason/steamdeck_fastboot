@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # --- 配置区域 ---
+# 获取当前脚本所在的绝对路径
+CURRENT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # .service文件名称
 SERVICE_NAME="steamdeck_fastboot.service"
 # 屏蔽功能脚本路径
 CORE_SCRIPT="$CURRENT_DIR/steamdeck_fastboot.sh"
-# 获取当前脚本所在的绝对路径
-CURRENT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # 整理获得 源文件路径 和 目标文件路径
 SOURCE_SERVICE_FILE="$CURRENT_DIR/$SERVICE_NAME"
 TARGET_SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
@@ -41,10 +41,10 @@ check_status() {
 install_service() {
     echo "🔧 正在安装/更新服务..."
 
-    # 1. 预清理：尝试停止旧服务，忽略报错
+    # 预清理：尝试停止旧服务，忽略报错
     systemctl stop "$SERVICE_NAME" 2>/dev/null
 
-    # 2. 检查屏蔽脚本
+    # 检查屏蔽脚本
     if [ ! -f "$CORE_SCRIPT" ]; then
         echo "❌ 错误：找不到核心脚本 $CORE_SCRIPT"
         exit 1
@@ -52,46 +52,62 @@ install_service() {
     # 防止脚本没有执行权限
     chmod +x "$CORE_SCRIPT"
 
-    # 3. 动态修正 .service 文件内容
-    # 使用 sed 直接修改源文件，确保路径正确且逻辑符合要求
-    echo "📝 修正.service文件中"
-    echo "📝 修正路径指向：$CURRENT_DIR"
+    # 全量写入 .service 文件内容
+    echo "📝 创建.service文件中"
+    touch $SOURCE_SERVICE_FILE
+    cat > "$SOURCE_SERVICE_FILE" << EOF
+[Unit]
+Description=Steam Deck Fast Boot
+# 规定在网络准备好后运行
+After=network.target
 
-    # 设置Type=oneshot
-    if grep -q "^Type=" "$SOURCE_SERVICE_FILE"; then
-        # 设置Type为oneshot
-        sed -i "s|^Type=.*|Type=oneshot|g" "$SOURCE_SERVICE_FILE"
-    else
-        # 如果没有Type=，就在 [Service] 下面插入Type=oneshot
-        sed -i "/\[Service\]/a Type=oneshot" "$SOURCE_SERVICE_FILE"
-    fi
+[Service]
+# 规定脚本后台运行
+Type=simple
 
-    # 设置 RemainAfterExit=yes
-    if grep -q "^RemainAfterExit=" "$SOURCE_SERVICE_FILE"; then
-        sed -i "s|^RemainAfterExit=.*|RemainAfterExit=yes|g" "$SOURCE_SERVICE_FILE"
-    else
-        sed -i "/\[Service\]/a RemainAfterExit=yes" "$SOURCE_SERVICE_FILE"
-    fi
+# ExecStart 的脚本执行完毕退出了，Systemd 依然认为此服务是 Active 的
+# 这使得关机时会触发 ExecStop
+RemainAfterExit=yes
 
-    # 设置 ExecStart 为 wait 调用
-    # 开机时，执行 steam_fastboot.sh wait 命令，以关闭屏蔽规则
-    sed -i "s|^ExecStart=.*|ExecStart=$CORE_SCRIPT wait|g" "$SOURCE_SERVICE_FILE"
+# 权限
+User=root
+Group=root
 
-    # 设置 ExecStop 为 on 调用
-    # 关机时，执行 steam_fastboot.sh on 命令，写入屏蔽规则，为下次开机做准备
-    sed -i "s|^ExecStop=.*|ExecStop=$CORE_SCRIPT on|g" "$SOURCE_SERVICE_FILE"
+# 开机逻辑
+# 开机时，hosts 已经是屏蔽状态（上次关机改的）。
+# 只需要进入 wait 模式，等 Steam 启动后关闭屏蔽规则即可。
+# wait 函数内部最后会自动调用 disable_block，这里只需要 wait
+ExecStart=$CORE_SCRIPT wait
+# 也可以ExecStart=/bin/bash -c "$CORE_SCRIPT on && $CORE_SCRIPT wait"
 
-    # 4. 部署.service文件
+# 关机逻辑
+# 关机时，把屏蔽规则写入 hosts。
+# 下次开机时，Steam 一上来就会撞墙。
+ExecStop=$CORE_SCRIPT on
+
+# 超时设置
+# 给 wait 足够的时间
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    echo "📝 已修正路径指向：$CURRENT_DIR"
+
+    # 部署.service文件
     cp "$SOURCE_SERVICE_FILE" "$TARGET_SERVICE_FILE"
     chmod 644 "$TARGET_SERVICE_FILE"
 
-    # 5. 激活服务
+    # 激活服务
+    echo "重载 systemd 守护进程..."
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
     
-    # 6. 重启服务以应用新配置
+    # 重启服务以应用新配置
     # 注意：此时运行 restart 会触发 ExecStop(on) 然后 ExecStart(wait)
     # 如果你现在正在用 Steam，这也没关系，wait 会检测到日志并立即解封
+    echo "启动服务..."
     systemctl restart "$SERVICE_NAME"
 
     echo "✅ 服务已部署并激活！"
