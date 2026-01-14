@@ -151,17 +151,18 @@ SteamOS在开机时，检测到没有网络，
    在屏蔽规则开启的状态下，你应该能看到被 `Steam_Fastboot_Block` 标记包裹的规则：
 
    ```txt
-   # --- Steam_Fastboot_Block_Start --- 
-   0.0.0.0 api.steampowered.com 
-   0.0.0.0 store.steampowered.com  
-   0.0.0.0 steamcommunity.com       
-   0.0.0.0 client-download.steampowered.com    
+   # --- Steam_Fastboot_Block_Start ---
+   0.0.0.0 api.steampowered.com
+   0.0.0.0 store.steampowered.com
+   0.0.0.0 steamcommunity.com
+   0.0.0.0 client-download.steampowered.com
    0.0.0.0 client-update.steamstatic.com
    :: api.steampowered.com
-   :: store.steampowered.com   
-   :: steamcommunity.com 
-   :: client-download.steampowered.com                       
-   :: client-update.steamstatic.com                                                                    # --- Steam_Fastboot_Block_End ---
+   :: store.steampowered.com
+   :: steamcommunity.com
+   :: client-download.steampowered.com
+   :: client-update.steamstatic.com
+   # --- Steam_Fastboot_Block_End ---
    ```
 
 3. 查看服务运行日志
